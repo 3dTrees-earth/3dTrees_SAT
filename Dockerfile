@@ -269,7 +269,7 @@ RUN mkdir -p /home/nibio && \
 COPY ./src /src
 
 #copy model file
-# COPY PointGroup-PAPER.pt /src/SegmentAnyTree/model_file/PointGroup-PAPER.pt
+ENV NUMBA_DISABLE_CACHE=1
 
 
 # Set working directory
