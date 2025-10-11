@@ -269,7 +269,7 @@ RUN mkdir -p /home/nibio && \
 COPY ./src /src
 
 #copy model file
-COPY PointGroup-PAPER.pt /src/SegmentAnyTree/model_file/PointGroup-PAPER.pt
+# COPY PointGroup-PAPER.pt /src/SegmentAnyTree/model_file/PointGroup-PAPER.pt
 
 
 # Set working directory
