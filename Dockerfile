@@ -268,6 +268,10 @@ RUN mkdir -p /home/nibio && \
 # Copy source code to the appropriate location
 COPY ./src /src
 
+#copy model file
+COPY PointGroup-PAPER.pth /src/SegmentAnyTree/model_file/PointGroup-PAPER.pth
+
+
 # Set working directory
 WORKDIR /src
 
