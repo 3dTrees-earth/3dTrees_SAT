@@ -14,5 +14,5 @@ run_docker.sh
 run_docker_deletefiles.sh
 Tiling_Merge*
 .gitignore
-PointGroup-PAPER.pth
+PointGroup-PAPER.pt
 
