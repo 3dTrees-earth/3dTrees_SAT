@@ -1,41 +1,57 @@
 name: Build and Push Docker Image on Release
+
 on:
   release:
     types: [published]
   workflow_dispatch:
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: 3dtrees-earth/${{ github.event.repository.name }}
-  MODEL_VERSION: model_v1  
-  MODEL_FILE:  PointGroup-PAPER.pt          
+  MODEL_VERSION: model_v1
+  MODEL_FILE: src/SegmentAnyTree/model_file/PointGroup-PAPER.pt
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Download model file
+        with:
+          lfs: true
+
+      - name: Verify model file
         run: |
-          curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -o ${{ env.MODEL_FILE }} \
-            https://github.com/${{ github.repository }}/releases/download/${{ env.MODEL_VERSION }}/${{ env.MODEL_FILE }}
-          ls -lh ${{ env.MODEL_FILE }}
-          echo "Model file downloaded successfully"
-      
+          FILE="${{ env.MODEL_FILE }}"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Model file not found: $FILE"
+            exit 1
+          fi
+
+          FILE_SIZE=$(stat -c%s "$FILE")
+          echo "Model file size: $FILE_SIZE bytes"
+
+          if [ "$FILE_SIZE" -lt 1000000 ]; then
+            echo "::error::Model file appears too small; likely not a valid binary model."
+            exit 1
+          fi
+
+          echo "Model file verified."
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -45,7 +61,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
-      
+
       - name: Free space
         run: |
           sudo rm -rf \
@@ -61,7 +77,7 @@ jobs:
             /usr/local/share/powershell \
             /usr/share/dotnet \
             /usr/share/swift
-      
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
