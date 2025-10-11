@@ -269,8 +269,15 @@ RUN mkdir -p /home/nibio && \
 COPY ./src /src
 
 #copy model file
-ENV NUMBA_DISABLE_CACHE=1
+# ENV NUMBA_DISABLE_CACHE=1
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV FONTCONFIG_PATH=/tmp/fontconfig
+ENV FONTCONFIG_FILE=/tmp/fontconfig/fonts.conf
 
+# Create cache directories and PyTorch dataset structure with proper permissions
+RUN mkdir -p /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig && \
+    chmod 777 /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig
 
 # Set working directory
 WORKDIR /src
