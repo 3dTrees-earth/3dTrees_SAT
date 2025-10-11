@@ -1,0 +1,17 @@
+shared*
+*__pycache__*  
+start_docker_it.sh
+!.hydra
+pyproject.toml
+*code-workspace*
+*.vscode
+run_docker_it.sh
+/src/start_process.sh
+/src/ressource_logger.sh
+/src/initialization.sh
+/src/finalize.sh
+run_docker.sh
+run_docker_deletefiles.sh
+Tiling_Merge*
+.gitignore
+
