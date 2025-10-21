@@ -30,6 +30,27 @@ mkdir -p "/tmp/bucket_in_folder" \
 # Copy input files to the processing directory
 cp "${SHARED_FOLDER_PATH}/02_input_SAT"/*.laz "/tmp/bucket_in_folder/"
 
+# Start resource monitoring in background if enabled
+RESOURCE_MONITOR_PID=""
+if [ "${ENABLE_LOG_FILE}" = "true" ]; then
+    echo "Starting resource monitoring (CPU cores, memory, GPU, etc.)..."
+    LOG_FILE="${SHARED_FOLDER_PATH}/resource_usage.log"
+    bash /src/resource_monitor.sh "$LOG_FILE" 5 &
+    RESOURCE_MONITOR_PID=$!
+fi
+
+# Function to cleanup resource monitoring
+cleanup_monitor() {
+    if [ -n "$RESOURCE_MONITOR_PID" ]; then
+        echo "Stopping resource monitoring..."
+        kill $RESOURCE_MONITOR_PID 2>/dev/null
+        wait $RESOURCE_MONITOR_PID 2>/dev/null
+    fi
+}
+
+# Set trap to cleanup on exit
+trap cleanup_monitor EXIT
+
 # Run segmentation
 echo "Running SegmentAnyTree..."
 # No conda activation needed for segmentation-only workflow

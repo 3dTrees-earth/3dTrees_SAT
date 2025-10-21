@@ -2,8 +2,9 @@
 import os
 import subprocess
 import sys
-import argparse
 import zipfile
+import time
+from datetime import datetime
 
 try:
     from parameters import Parameters
@@ -38,6 +39,7 @@ def process_input_files(params: Parameters, output_dir: str) -> bool:
     env.update(
         {
             "SHARED_FOLDER_PATH": data_dir,
+            "ENABLE_LOG_FILE": params.log_file,
         }
     )
 
@@ -49,7 +51,7 @@ def process_input_files(params: Parameters, output_dir: str) -> bool:
     return True
 
 
-def create_results_zip(output_dir: str) -> bool:
+def create_results_zip(output_dir: str, params: Parameters) -> bool:
     """Create a zip file of the final folder structure in the current working directory."""
     data_dir = os.path.abspath(output_dir)
 
@@ -77,6 +79,13 @@ def create_results_zip(output_dir: str) -> bool:
                             arcname = os.path.relpath(file_path, data_dir)
                             zipf.write(file_path, arcname)
 
+            # If log-file is enabled, add the resource log file
+            if params.log_file.lower() == "true":
+                log_file_path = os.path.join(data_dir, "resource_usage.log")
+                if os.path.exists(log_file_path):
+                    zipf.write(log_file_path, "resource_usage.log")
+                    print("Added resource usage log to zip file")
+
         print(f"Zip file created: {os.path.abspath(zip_file_path)}")
         return True
     except Exception as e:
@@ -85,33 +94,48 @@ def create_results_zip(output_dir: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", required=True, help="Input zip file path")
-    parser.add_argument("--output-dir", required=True, help="Output directory")
-    args = parser.parse_args()
+    # Parse parameters from CLI using Parameters class
+    params = Parameters()
 
-    if not os.path.isfile(args.dataset_path):
-        print(f"Input file not found: {args.dataset_path}")
+    # Start timing
+    start_time = time.time()
+    start_datetime = datetime.now()
+    print(
+        f"=== Processing started at {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} ==="
+    )
+
+    if not os.path.isfile(params.dataset_path):
+        print(f"Input file not found: {params.dataset_path}")
         sys.exit(2)
 
-    if not args.dataset_path.lower().endswith(".zip"):
-        print(f"Input file must be a ZIP file: {args.dataset_path}")
+    if not params.dataset_path.lower().endswith(".zip"):
+        print(f"Input file must be a ZIP file: {params.dataset_path}")
         sys.exit(3)
 
     # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(params.output_dir, exist_ok=True)
 
     # Extract zip file to output directory
-    extract_zip_to_output(args.dataset_path, args.output_dir)
+    extract_zip_to_output(params.dataset_path, params.output_dir)
 
     # Process the extracted files
-    params = Parameters()
-    success = process_input_files(params, args.output_dir)
+    success = process_input_files(params, params.output_dir)
 
     if success:
         # Create a zip file of the final folder structure
-        create_results_zip(args.output_dir)
+        create_results_zip(params.output_dir, params)
 
+    # End timing
+    end_time = time.time()
+    end_datetime = datetime.now()
+    duration = end_time - start_time
+
+    print(
+        f"\n=== Processing completed at {end_datetime.strftime('%Y-%m-%d %H:%M:%S')} ==="
+    )
+    print(
+        f"Total processing time: {duration:.2f} seconds ({duration / 60:.2f} minutes)"
+    )
     print("Processing complete!")
 
 

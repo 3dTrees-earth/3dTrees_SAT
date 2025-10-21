@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, AliasChoices
+from pydantic import Field, AliasChoices, field_validator
 from pathlib import Path
 
 
@@ -15,6 +15,11 @@ class Parameters(BaseSettings):
         "/out",
         description="Output directory",
         alias=AliasChoices("output-dir", "output_dir"),
+    )
+    log_file: str = Field(
+        "false",
+        description="Enable resource monitoring log (CPU, GPU, etc.) with timestamps",
+        alias=AliasChoices("log-file", "log_file"),
     )
 
     model_config = SettingsConfigDict(
