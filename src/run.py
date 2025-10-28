@@ -4,6 +4,7 @@ import subprocess
 import sys
 import zipfile
 import time
+import shutil
 from datetime import datetime
 
 try:
@@ -21,7 +22,25 @@ def extract_zip_to_output(zip_path, output_dir):
     print("Extraction complete.")
 
 
-def process_input_files(params: Parameters, output_dir: str) -> bool:
+def handle_single_laz_file(laz_path, output_dir):
+    """Handle a single LAZ file by copying it to the input SAT directory."""
+    print(f"Processing single LAZ file: {laz_path}")
+
+    # Ensure output SAT directory exists
+    input_sat_dir = os.path.join(output_dir, "02_input_SAT")
+    os.makedirs(input_sat_dir, exist_ok=True)
+
+    # Copy the LAZ file to the input SAT directory
+    dest_path = os.path.join(input_sat_dir, os.path.basename(laz_path))
+    shutil.copy2(laz_path, dest_path)
+    print(f"Copied {laz_path} to {dest_path}")
+
+    return input_sat_dir
+
+
+def process_input_files(
+    params: Parameters, output_dir: str, is_single_file: bool = False
+) -> bool:
     """Process input files in the 02_input_SAT directory."""
     data_dir = os.path.abspath(output_dir)
 
@@ -48,7 +67,39 @@ def process_input_files(params: Parameters, output_dir: str) -> bool:
     subprocess.run(["bash", "/src/main.sh"], cwd="/", env=env)
 
     print(f"Segmentation complete. Results are in {data_dir}/03_output_SAT")
+
+    # If processing a single file, rename the output to "segmented_pc.laz"
+    if is_single_file:
+        rename_output_to_segmented_pc(data_dir)
+
     return True
+
+
+def rename_output_to_segmented_pc(data_dir: str):
+    """Rename the output file to 'segmented_pc.laz' after processing a single file and copy to cwd."""
+    output_sat_dir = os.path.join(data_dir, "03_output_SAT")
+    final_results_dir = os.path.join(output_sat_dir, "final_results")
+
+    # Look for processed LAZ files in the final results directory
+    if os.path.exists(final_results_dir):
+        laz_files = [f for f in os.listdir(final_results_dir) if f.endswith(".laz")]
+
+        if len(laz_files) == 1:
+            original_file = os.path.join(final_results_dir, laz_files[0])
+            new_file = os.path.join(final_results_dir, "segmented_pc.laz")
+            os.rename(original_file, new_file)
+            print(f"Renamed output file to: {new_file}")
+
+            # Copy to current working directory (same behavior as zip output)
+            cwd_file = os.path.join(os.getcwd(), "segmented_pc.laz")
+            shutil.copy2(new_file, cwd_file)
+            print(f"Copied to current working directory: {os.path.abspath(cwd_file)}")
+        elif len(laz_files) > 1:
+            print(
+                "Warning: Multiple LAZ files found. Please manually rename the desired file to 'segmented_pc.laz'"
+            )
+        else:
+            print("Warning: No LAZ files found in final results directory")
 
 
 def create_results_zip(output_dir: str, params: Parameters) -> bool:
@@ -108,22 +159,36 @@ def main():
         print(f"Input file not found: {params.dataset_path}")
         sys.exit(2)
 
-    if not params.dataset_path.lower().endswith(".zip"):
-        print(f"Input file must be a ZIP file: {params.dataset_path}")
+    # Determine if input is a ZIP file or a single LAZ file
+    is_single_laz = params.dataset_path.lower().endswith(".laz")
+    is_zip = params.dataset_path.lower().endswith(".zip")
+
+    if not (is_single_laz or is_zip):
+        print(
+            f"Input file must be either a ZIP file or a LAZ file: {params.dataset_path}"
+        )
         sys.exit(3)
 
     # Create output directory if it doesn't exist
     os.makedirs(params.output_dir, exist_ok=True)
 
-    # Extract zip file to output directory
-    extract_zip_to_output(params.dataset_path, params.output_dir)
+    # Handle input file based on type
+    if is_zip:
+        # Extract zip file to output directory
+        extract_zip_to_output(params.dataset_path, params.output_dir)
+    elif is_single_laz:
+        # Copy single LAZ file to input SAT directory
+        handle_single_laz_file(params.dataset_path, params.output_dir)
 
-    # Process the extracted files
-    success = process_input_files(params, params.output_dir)
+    # Process the extracted/copied files
+    success = process_input_files(
+        params, params.output_dir, is_single_file=is_single_laz
+    )
 
     if success:
-        # Create a zip file of the final folder structure
-        create_results_zip(params.output_dir, params)
+        # Create a zip file of the final folder structure (only for ZIP input)
+        if is_zip:
+            create_results_zip(params.output_dir, params)
 
     # End timing
     end_time = time.time()

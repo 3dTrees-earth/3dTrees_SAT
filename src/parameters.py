@@ -8,7 +8,7 @@ class Parameters(BaseSettings):
 
     dataset_path: str = Field(
         "/in",
-        description="Input dataset path (ZIP file)",
+        description="Input dataset path (ZIP file or single LAZ file)",
         alias=AliasChoices("dataset-path", "dataset_path"),
     )
     output_dir: Path = Field(
