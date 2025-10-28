@@ -130,13 +130,6 @@ def create_results_zip(output_dir: str, params: Parameters) -> bool:
                             arcname = os.path.relpath(file_path, data_dir)
                             zipf.write(file_path, arcname)
 
-            # If log-file is enabled, add the resource log file
-            if params.log_file.lower() == "true":
-                log_file_path = os.path.join(data_dir, "resource_usage.log")
-                if os.path.exists(log_file_path):
-                    zipf.write(log_file_path, "resource_usage.log")
-                    print("Added resource usage log to zip file")
-
         print(f"Zip file created: {os.path.abspath(zip_file_path)}")
         return True
     except Exception as e:
@@ -189,6 +182,16 @@ def main():
         # Create a zip file of the final folder structure (only for ZIP input)
         if is_zip:
             create_results_zip(params.output_dir, params)
+
+        # Copy the resource log to cwd separately if enabled
+        if params.log_file.lower() == "true":
+            log_file_path = os.path.join(params.output_dir, "resource_usage.log")
+            if os.path.exists(log_file_path):
+                cwd_log_file = os.path.join(os.getcwd(), "resource_usage.log")
+                shutil.copy2(log_file_path, cwd_log_file)
+                print(
+                    f"Copied resource usage log to current working directory: {os.path.abspath(cwd_log_file)}"
+                )
 
     # End timing
     end_time = time.time()
