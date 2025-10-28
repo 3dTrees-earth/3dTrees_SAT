@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu20.04 as builder
+FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu20.04 AS builder
 
 RUN ln -fs /usr/share/zoneinfo/Europe/Oslo /etc/localtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -229,6 +229,10 @@ RUN apt-get clean && \
     \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
     \) -exec rm -rf '{}' + ;
 
+RUN mkdir -p /src/SegmentAnyTree/model_file
+RUN wget -O /src/SegmentAnyTree/model_file/PointGroup-PAPER.pt \
+    https://kattenborn.go.bwsfs.uni-freiburg.de:11443/web/client/pubshares/VmZa6NbvurwSTq6cN5BLya?compress=false
+
 # Stage 2: Final stage
 FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu20.04 AS final
 
@@ -237,6 +241,7 @@ RUN ln -fs /usr/share/zoneinfo/Europe/Oslo /etc/localtime
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/lib /usr/local/lib
 COPY --from=builder /usr/local/include /usr/local/include
+COPY --from=builder /src/SegmentAnyTree/model_file /src/SegmentAnyTree/model_file
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-base \
