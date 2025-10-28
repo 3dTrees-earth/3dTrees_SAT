@@ -234,7 +234,7 @@ RUN wget -O /src/SegmentAnyTree/model_file/PointGroup-PAPER.pt \
     https://kattenborn.go.bwsfs.uni-freiburg.de:11443/web/client/pubshares/VmZa6NbvurwSTq6cN5BLya?compress=false
 
 # Stage 2: Final stage
-FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu20.04 AS final
+FROM nvidia/cuda:11.1.1-cudnn8-runtime-ubuntu20.04 AS final
 
 RUN ln -fs /usr/share/zoneinfo/Europe/Oslo /etc/localtime
 
