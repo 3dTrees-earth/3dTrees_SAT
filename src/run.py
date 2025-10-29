@@ -183,16 +183,6 @@ def main():
         if is_zip:
             create_results_zip(params.output_dir, params)
 
-        # Copy the resource log to cwd separately if enabled
-        if params.log_file.lower() == "true":
-            log_file_path = os.path.join(params.output_dir, "resource_usage.log")
-            if os.path.exists(log_file_path):
-                cwd_log_file = os.path.join(os.getcwd(), "resource_usage.log")
-                shutil.copy2(log_file_path, cwd_log_file)
-                print(
-                    f"Copied resource usage log to current working directory: {os.path.abspath(cwd_log_file)}"
-                )
-
     # End timing
     end_time = time.time()
     end_datetime = datetime.now()
