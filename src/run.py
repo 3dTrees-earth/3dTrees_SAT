@@ -178,14 +178,6 @@ def main():
         params, params.output_dir, is_single_file=is_single_laz
     )
 
-    # Copy resource log to working directory if enabled (even if processing failed)
-    if params.log_file == "true":
-        resource_log_src = os.path.join(params.output_dir, "resource_usage.log")
-        resource_log_dst = os.path.join(os.getcwd(), "resource_usage.log")
-        if os.path.exists(resource_log_src):
-            shutil.copy2(resource_log_src, resource_log_dst)
-            print(f"Resource usage log copied to: {os.path.abspath(resource_log_dst)}")
-
     if success:
         # Create a zip file of the final folder structure (only for ZIP input)
         if is_zip:
