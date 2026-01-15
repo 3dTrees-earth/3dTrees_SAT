@@ -5,7 +5,6 @@ Deep learning-based **tree instance segmentation** for LiDAR point clouds, packa
 This repository wraps the **SegmentAnyTree** inference pipeline and ships it as a **GPU Docker image** with a small CLI (`src/run.py`) for running inference and collecting outputs consistently.
 
 It is also **optimized for use on Galaxy** (packaged as a Galaxy tool) and can be run directly on **usegalaxy.eu**:
-
 [Click here to run the tool on galaxy](https://usegalaxy.eu/?tool_id=toolshed.g2.bx.psu.edu%2Frepos%2Fbgruening%2F3dtrees_segmentanytree%2F3dtrees_segmentanytree%2F1.1.0%2Bgalaxy0&version=latest)
 
 Upstream project: [SegmentAnyTree](https://github.com/SmartForest-no/SegmentAnyTree)
