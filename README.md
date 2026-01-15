@@ -1,70 +1,94 @@
-# 🌳 Til_SAT: Segment Any Tree - optimized for 3dTrees
+# 3dTrees_SAT
 
-**Deep learning-based tree segmentation from LiDAR point clouds**  
-Powered by the **SegmentAnyTree** algorithm ([Wielgosz et al., 2024](https://doi.org/10.1016/j.rse.2024.114367))  
+Deep learning-based **tree instance segmentation** for LiDAR point clouds, packaged for the 3dTrees workflow.
 
----
+This repository wraps the **SegmentAnyTree** inference pipeline and ships it as a **GPU Docker image** with a small CLI (`src/run.py`) for running inference and collecting outputs consistently.
 
-## 📌 Overview  
+It is also **optimized for use on Galaxy** (packaged as a Galaxy tool) and can be run directly on **usegalaxy.eu**:
 
-**Til_SAT** performs **deep learning-based tree segmentation** on LiDAR point clouds.  
-It uses a sensor- and platform-agnostic model that works across **airborne (ALS/ULS), terrestrial (TLS), and mobile (MLS) laser scanning data**.  
+- Galaxy tool page: `https://usegalaxy.eu/?tool_id=toolshed.g2.bx.psu.edu%2Frepos%2Fbgruening%2F3dtrees_segmentanytree%2F3dtrees_segmentanytree%2F1.1.0%2Bgalaxy0&version=latest`
 
-The tool automatically handles **subsampling, tiling, segmentation, and merging** to produce a **segmented point cloud at the original resolution**.  
+Upstream project:
 
----
+- SegmentAnyTree: `https://github.com/SmartForest-no/SegmentAnyTree`
 
-## ⚙️ Features  
+## Overview
 
-- 🌐 **Platform agnostic** – works with ALS, TLS, ULS, MLS datasets  
-- 📏 **Voxel-based subsampling** at 100 pts/m²  
-- 🧩 **Automatic tiling** for large point clouds (>3 GB)  
-- 🤖 **Deep learning segmentation** using SegmentAnyTree  
-- 🔄 **Merging** results back into the original resolution point cloud  
-- 📂 **Output**: Segmented `.laz` point cloud  
+- **Input**: a single `.laz` file, or a `.zip` containing one or more `.laz` files
+- **Output**: segmented `.laz` files written to `03_output_SAT/final_results/`
+- **Optional**: `resource_usage.log` (CPU/memory/GPU utilization sampled over time)
 
----
+## Requirements
 
-## 📥 Input  
+- **Linux** host recommended
+- **NVIDIA GPU** + working NVIDIA drivers
+- **Docker** with NVIDIA Container Toolkit (so `docker run --gpus ...` works)
 
-- **LiDAR point cloud**: `.laz` or `.las` format  
+## Run on Galaxy
 
----
+If you’re using Galaxy, prefer the Galaxy integration (it wraps the same containerized workflow and handles inputs/outputs in a Galaxy-friendly way):
 
-## 📤 Output  
+- `https://usegalaxy.eu/?tool_id=toolshed.g2.bx.psu.edu%2Frepos%2Fbgruening%2F3dtrees_segmentanytree%2F3dtrees_segmentanytree%2F1.1.0%2Bgalaxy0&version=latest`
 
-- **Segmented Point Cloud**: `.laz` file with tree segmentation results
+## Build
 
----
-
-## 🚀 Usage  
+From the repo root:
 
 ```bash
-python3.8 -u /src/run.py \
-    --dataset-path <input.laz> \
-    --output-dir /out/ \
-    --tile-size 100 \
-    --overlap 20 
+docker build -t 3dtrees_sat .
 ```
 
-## Workflow
+## Run (single file)
 
-### 1. Data Preparation
-- Voxel-based subsampling to 10 cm resolution (100 pts/m²)
-- Automatic tiling for large datasets (>3 GB)
+```bash
+docker run --rm --gpus all \
+  -v "/absolute/path/to/input.laz":/in/input.laz:ro \
+  -v "/absolute/path/to/out_dir":/out \
+  3dtrees_sat \
+  python3.8 /src/run.py --dataset-path /in/input.laz --output-dir /out --log-file true
+```
 
-### 2. Tree Segmentation
-- Deep learning inference using SegmentAnyTree model
-- Instance segmentation to identify individual trees
+### Outputs (single file)
 
-### 3. Quality Control
-- Whole tree filtering - trees extending into buffer zones are excluded
-- Configurable buffer zones for optimal results
+- **Results folder**: `/absolute/path/to/out_dir/03_output_SAT/final_results/`
+- **Convenience copy**: if exactly one output `.laz` is produced, it is renamed to `segmented_pc.laz` and copied to the container working directory
+- **Resource log (optional)**: `/absolute/path/to/out_dir/resource_usage.log`
 
-### 4. Resolution Recovery
-- KDTree-based reassignment of subsampled results to original resolution
-- Seamless merging of tile results back into full point cloud
+## Run (zip input)
 
-### 5. Output Generation
-- Segmented point cloud (.laz format) with tree instance IDs
-- Quality metrics and processing statistics
+If `--dataset-path` points to a `.zip`, it is extracted into `--output-dir` and then processed. On success, `processed_files.zip` is created in the container working directory.
+
+```bash
+docker run --rm --gpus all \
+  -v "/absolute/path/to/inputs.zip":/in/inputs.zip:ro \
+  -v "/absolute/path/to/out_dir":/out \
+  3dtrees_sat \
+  python3.8 /src/run.py --dataset-path /in/inputs.zip --output-dir /out --log-file true
+```
+
+## CLI reference
+
+Inside the container:
+
+```bash
+python3.8 /src/run.py \
+  --dataset-path <path/to/input.laz|input.zip> \
+  --output-dir <output_directory> \
+  --log-file <true|false>
+```
+
+## Output folder structure
+
+`--output-dir` becomes the shared workspace for the pipeline and will contain:
+
+- `00_original/` (created)
+- `01_subsampled/` (created)
+- `02_input_SAT/` (created; inputs are copied here)
+- `03_output_SAT/final_results/` (segmented `.laz` results)
+
+## CI / publishing
+
+On GitHub Release publish, `.github/workflows/main.yml` builds and pushes the image to GHCR under:
+
+- `ghcr.io/3dtrees-earth/<repo_name>:<version>`
+- `ghcr.io/3dtrees-earth/<repo_name>:latest` (default branch only)
