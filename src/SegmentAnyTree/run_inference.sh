@@ -72,8 +72,9 @@ python3.8 "$SCRIPT_DIR/nibio_inference/rename_result_files_segmentation.py" "$DE
 
 FINAL_DEST_DIR="$DEST_DIR/final_results"
 
-# Run merge script
-python3.8 "$SCRIPT_DIR/nibio_inference/merge_pt_ss_is_in_folders.py" -i "$DEST_DIR/utm2local" -s "$DEST_DIR" -o "$FINAL_DEST_DIR" -v
+# Run merge script (OPTIMIZED version for 10x faster merging!)
+# Original: python3.8 "$SCRIPT_DIR/nibio_inference/merge_pt_ss_is_in_folders.py" -i "$DEST_DIR/utm2local" -s "$DEST_DIR" -o "$FINAL_DEST_DIR" -v
+python3.8 "$SCRIPT_DIR/nibio_inference/merge_pt_ss_is_in_folders_optimized.py" -i "$DEST_DIR/utm2local" -s "$DEST_DIR" -o "$FINAL_DEST_DIR" -v
 
 # remove numbers in the beginning of the file names
 

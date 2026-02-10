@@ -66,6 +66,7 @@ def pandas_to_las(
         "Deviation": "int32",
         "PredSemantic": "uint8",
         "PredInstance": "uint16",
+        "PredInstanceSAT": "uint16",
     }
 
     # Standardize column names to match LAS format
