@@ -29,6 +29,7 @@ class MergePtSsIsKnn(object):
         self.instance_segmentation = instance_segmentation
         self.output_file_path = output_file_path
         self.verbose = verbose
+        self.predinstance_existed = False  # Track if PredInstance already existed
 
     def parallel_join(self, df1_chunk, df2, on_columns, how_type):
         return df1_chunk.merge(df2, on=on_columns, how=how_type)
@@ -65,6 +66,27 @@ class MergePtSsIsKnn(object):
             return df
 
         point_cloud_df = preprocess_data(self.point_cloud)
+        
+        # Check if PredInstance already exists in point cloud data
+        predinstance_exists = False
+        predinstance_col = None
+        predinstance_original_exists = False
+        
+        for col in point_cloud_df.columns:
+            if col.lower() == "predinstance":
+                predinstance_exists = True
+                predinstance_col = col
+            elif col.lower() == "predinstance_original":
+                predinstance_original_exists = True
+        
+        if predinstance_exists:
+            if self.verbose:
+                print(f"\n⚠️  WARNING: PredInstance column '{predinstance_col}' already exists in point cloud data!")
+                print("  Renaming to PredInstance_original to preserve existing data...")
+            # Rename existing PredInstance to PredInstance_original
+            point_cloud_df.rename(columns={predinstance_col: "PredInstance_original"}, inplace=True)
+            self.predinstance_existed = True
+        
         semantic_segmentation_df = preprocess_data(self.semantic_segmentation)
         instance_segmentation_df = preprocess_data(self.instance_segmentation)
 
@@ -223,6 +245,15 @@ class MergePtSsIsKnn(object):
         # convert to laz
         las = laspy.read(self.output_file_path)
         las.write(self.output_file_path.replace(".las", ".laz"), do_compress=True)
+        
+        # Check if PredInstance existed and issue warning after saving
+        if self.predinstance_existed:
+            warning_msg = (
+                "⚠️  WARNING: PredInstance column already existed in the input point cloud data. "
+                "The existing data has been saved to dimension 'PredInstance_original' in the output file. "
+                "Please review the input data to avoid conflicts."
+            )
+            print(f"\n{warning_msg}")
 
     def run(self):
         if self.verbose:

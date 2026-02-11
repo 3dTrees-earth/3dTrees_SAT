@@ -133,22 +133,18 @@ class MergePtSsIsOptimized(object):
 
         point_cloud_df = preprocess_data(self.point_cloud, "point cloud")
         
-        # Check if PredInstance already exists in point cloud data
-        predinstance_exists = False
-        predinstance_col = None
-        for col in point_cloud_df.columns:
-            if col.lower() == "predinstance":
-                predinstance_exists = True
-                predinstance_col = col
-                break
+        # No renaming needed here - Step 1 should have already preserved input dimensions
+        if self.verbose:
+            print(f"\n  Point cloud columns: {list(point_cloud_df.columns)}")
         
-        if predinstance_exists:
-            if self.verbose:
-                print(f"\n⚠️  WARNING: PredInstance column '{predinstance_col}' already exists in point cloud data!")
-                print("  Renaming to PredInstanceSAT to preserve existing data...")
-            # Rename existing PredInstance to PredInstanceSAT
-            point_cloud_df.rename(columns={predinstance_col: "PredInstanceSAT"}, inplace=True)
+        # Check if we have the expected _original columns
+        if "PredInstance_original" in point_cloud_df.columns:
             self.predinstance_existed = True
+            if self.verbose:
+                print("  ✅  Found PredInstance_original - input data preserved")
+        if "PredSemantic_original" in point_cloud_df.columns:
+            if self.verbose:
+                print("  ✅  Found PredSemantic_original - input data preserved")
         
         semantic_segmentation_df = preprocess_data(self.semantic_segmentation, "semantic segmentation")
         instance_segmentation_df = preprocess_data(self.instance_segmentation, "instance segmentation")
@@ -169,44 +165,71 @@ class MergePtSsIsOptimized(object):
         # Dask adds significant overhead for single files - direct pandas is faster!
         if self.verbose:
             print("  Joining point cloud with semantic segmentation...")
-        merged_df = point_cloud_df.join(semantic_segmentation_df, how="outer")
+        merged_df = point_cloud_df.join(semantic_segmentation_df, how="outer", lsuffix='_pc', rsuffix='_ss')
         
         if self.verbose:
             print("  Joining with instance segmentation...")
-        merged_df = merged_df.join(instance_segmentation_df, how="outer")
+        merged_df = merged_df.join(instance_segmentation_df, how="outer", rsuffix='_is')
 
         if self.verbose:
             print(f"  Joined in {time.time() - join_start:.2f}s")
 
         # remove the following columns from the merged data frame : x_instance_segmentation, y_instance_segmentation, z_instance_segmentation
+        cols_to_drop = [
+            "x_instance_segmentation",
+            "y_instance_segmentation",
+            "z_instance_segmentation",
+            "x_semantic_segmentation",
+            "y_semantic_segmentation",
+            "z_semantic_segmentation",
+            "preds_semantic_segmentation_pc",
+            "preds_instance_segmentation_pc",
+        ]
         merged_df.drop(
-            columns=[
-                "x_instance_segmentation",
-                "y_instance_segmentation",
-                "z_instance_segmentation",
-            ],
+            columns=[c for c in cols_to_drop if c in merged_df.columns],
             inplace=True,
         )
 
-        # remove the following columns from the merged data frame : x_semantic_segmentation, y_semantic_segmentation, z_semantic_segmentation
-        merged_df.drop(
-            columns=[
-                "x_semantic_segmentation",
-                "y_semantic_segmentation",
-                "z_semantic_segmentation",
-            ],
-            inplace=True,
-        )
+        # rename column 'preds_semantic_segmentation' to 'PredSemantic'
+        # The input PredSemantic (if it existed) has already been renamed to PredSemantic_original
+        # So we can safely use PredSemantic for the new results
+        if "preds_semantic_segmentation" in merged_df.columns:
+            merged_df.rename(
+                columns={"preds_semantic_segmentation": "PredSemantic"}, inplace=True
+            )
+        elif "preds_semantic_segmentation_ss" in merged_df.columns:
+            merged_df.rename(
+                columns={"preds_semantic_segmentation_ss": "PredSemantic"}, inplace=True
+            )
+        
+        # Handle all _original columns that may have gotten suffixes during join
+        original_cols_to_fix = {}
+        for col in merged_df.columns:
+            if col.endswith("_original_pc"):
+                base_name = col.replace("_pc", "")
+                original_cols_to_fix[col] = base_name
+            elif col.endswith("_original_1_pc"):  # Handle numbered originals
+                base_name = col.replace("_pc", "")
+                original_cols_to_fix[col] = base_name
+        
+        # Rename all the original columns back to their proper names
+        if original_cols_to_fix:
+            merged_df.rename(columns=original_cols_to_fix, inplace=True)
+            if self.verbose:
+                for old_name, new_name in original_cols_to_fix.items():
+                    print(f"  Restored column: {old_name} -> {new_name}")
 
-        # rename column 'preds_semantic_segmentation' to 'predSemantic'
-        merged_df.rename(
-            columns={"preds_semantic_segmentation": "PredSemantic"}, inplace=True
-        )
-
-        # rename column 'preds_instance_segmentation' to 'predInstance'
-        merged_df.rename(
-            columns={"preds_instance_segmentation": "PredInstance"}, inplace=True
-        )
+        # rename column 'preds_instance_segmentation' to 'PredInstance'
+        # The input PredInstance (if it existed) has already been renamed to PredInstance_original
+        # So we can safely use PredInstance for the new results
+        if "preds_instance_segmentation" in merged_df.columns:
+            merged_df.rename(
+                columns={"preds_instance_segmentation": "PredInstance"}, inplace=True
+            )
+        elif "preds_instance_segmentation_is" in merged_df.columns:
+            merged_df.rename(
+                columns={"preds_instance_segmentation_is": "PredInstance"}, inplace=True
+            )
 
         if self.verbose:
             print("\nPost-processing merged data...")
@@ -222,15 +245,15 @@ class MergePtSsIsOptimized(object):
         merged_df["y"] = merged_df["y"].astype(float) + min_y
         merged_df["z"] = merged_df["z"].astype(float) + min_z
 
-        # add 1 to PredInstance column
-        merged_df["PredInstance"] = merged_df["PredInstance"] + 1
-
-        # Assign NaNs in PredInstance to 0. This is because the instance segmentation
-        # may not have been able to assign an instance ID to every point, so after the
-        # outer join, it is possible to have missing values in PredInstance. This causes
-        # an issue when saving the data to a .las file, as we want to cast the column to
-        # an unsigned integer type, which does not support NaNs.
-        merged_df["PredInstance"] = merged_df["PredInstance"].fillna(0)
+        # add 1 to PredInstance column and handle NaNs
+        if "PredInstance" in merged_df.columns:
+            merged_df["PredInstance"] = merged_df["PredInstance"] + 1
+            # Assign NaNs to 0. This is because the instance segmentation
+            # may not have been able to assign an instance ID to every point, so after the
+            # outer join, it is possible to have missing values in PredInstance. This causes
+            # an issue when saving the data to a .las file, as we want to cast the column to
+            # an unsigned integer type, which does not support NaNs.
+            merged_df["PredInstance"] = merged_df["PredInstance"].fillna(0)
 
         if self.verbose:
             print(f"  Post-processed in {time.time() - post_start:.2f}s")
@@ -278,13 +301,14 @@ class MergePtSsIsOptimized(object):
         if self.verbose:
             print(f"  Saved in {time.time() - save_start:.2f}s")
         
-        # Check if PredInstance existed and raise error after saving
+        # Check if PredInstance existed and issue warning after saving
         if self.predinstance_existed:
-            raise ValueError(
-                "ERROR: PredInstance column already existed in the input point cloud data. "
-                "The existing data has been saved to dimension 'PredInstanceSAT' in the output file. "
+            warning_msg = (
+                "⚠️  WARNING: PredInstance column already existed in the input point cloud data. "
+                "The existing data has been saved to dimension 'PredInstance_original' in the output file. "
                 "Please review the input data to avoid conflicts."
             )
+            print(f"\n{warning_msg}")
 
     def run(self):
         if self.verbose:

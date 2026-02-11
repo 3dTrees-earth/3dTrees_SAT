@@ -29,12 +29,95 @@ def optimized_modification_pipeline(input_file_path, output_file_path, json_file
     
     try:
         # 1. Read LAS/LAZ
-        las = laspy.read(input_file_path)
+        # Handle potential duplicate field names (e.g., PredInstance appearing multiple times)
+        las = None
+        read_error = None
         
-        # 2. Get all dimensions
+        # Try reading with laspy.read() first
+        try:
+            las = laspy.read(input_file_path)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "occurs more than once" in str(e) or "duplicate" in error_str or "field" in error_str:
+                # If duplicate field error, try alternative reading methods
+                print(f"  ⚠️  Warning: Duplicate field detected in LAS file, attempting alternative reading method...")
+                read_error = e
+                
+                # Try using laspy.open() - sometimes this handles files differently
+                try:
+                    with laspy.open(input_file_path) as las_file:
+                        las = las_file.read()
+                        print(f"  ✓ Successfully read file using laspy.open()")
+                except Exception as e2:
+                    # If that also fails, try reading with lazrs backend if available
+                    try:
+                        with laspy.open(input_file_path, laz_backend=laspy.LazBackend.LazrsParallel) as las_file:
+                            las = las_file.read()
+                            print(f"  ✓ Successfully read file using lazrs backend")
+                    except Exception as e3:
+                        # Last resort: provide helpful error message
+                        error_msg = (
+                            f"❌ ERROR: Could not read LAS file '{os.path.basename(input_file_path)}' due to duplicate field names.\n"
+                            f"   The file appears to have duplicate 'PredInstance' field definitions.\n"
+                            f"   This is a file structure issue that prevents laspy from reading the file.\n"
+                            f"   Original error: {read_error}\n"
+                            f"   Suggestion: The file may need to be repaired or the duplicate fields removed/renamed."
+                        )
+                        print(f"  {error_msg}")
+                        raise Exception(error_msg) from read_error
+            else:
+                raise
+        
+        # 2. Get all dimensions, handling duplicates
         basic_dims = [dim.name for dim in las.header.point_format.dimensions]
         extra_dims = list(las.header.point_format.extra_dimension_names)
-        all_dims = basic_dims + extra_dims
+        
+        # Deduplicate the dimension list to avoid processing the same dimension twice
+        all_input_dims = []
+        seen_input_dims = set()
+        for dim in basic_dims + extra_dims:
+            if dim not in seen_input_dims:
+                all_input_dims.append(dim)
+                seen_input_dims.add(dim)
+        
+        # Check for duplicate dimension names (case-insensitive)
+        seen_dims = set()
+        all_dims = []
+        dim_renames = {}  # Track renames for PredInstance -> PredInstance_original, etc.
+        
+        for dim in all_input_dims:
+            dim_lower = dim.lower()
+            
+            # Always rename PredInstance and PredSemantic to preserve input data
+            if dim_lower == "predinstance":
+                new_name = "PredInstance_original"
+                dim_renames[dim] = new_name
+                all_dims.append(new_name)
+                seen_dims.add(new_name.lower())
+                print(f"  ⚠️  Warning: Renaming '{dim}' to '{new_name}' to preserve input data")
+            elif dim_lower == "predsemantic":
+                new_name = "PredSemantic_original"
+                dim_renames[dim] = new_name
+                all_dims.append(new_name)
+                seen_dims.add(new_name.lower())
+                print(f"  ⚠️  Warning: Renaming '{dim}' to '{new_name}' to preserve input data")
+            elif dim_lower in seen_dims:
+                # This is a duplicate of other dimensions - handle it
+                base_name = f"{dim}_original"
+                new_name = base_name
+                counter = 1
+                while new_name.lower() in seen_dims or new_name in all_dims:
+                    new_name = f"{base_name}_{counter}"
+                    counter += 1
+                
+                dim_renames[dim] = new_name
+                all_dims.append(new_name)
+                seen_dims.add(new_name.lower())
+                print(f"  ⚠️  Warning: Renaming duplicate dimension '{dim}' to '{new_name}'")
+            else:
+                # This is the first occurrence - keep it as is
+                all_dims.append(dim)
+                seen_dims.add(dim_lower)
         
         # 3. Calculate min values - convert to Python floats to avoid SubFieldView issues
         min_x = float(np.array(las.x).min())
@@ -59,8 +142,24 @@ def optimized_modification_pipeline(input_file_path, output_file_path, json_file
             
             # Wrap in np.array to handle SubFieldView objects from laspy
             # IMPORTANT: Use lowercase for coordinate access in laspy (las.x, las.y, las.z)
-            attr_name = dim.lower() if dim.lower() in ['x', 'y', 'z'] else dim
-            val = np.array(getattr(las, attr_name))
+            # Check if this dimension was renamed
+            original_dim = None
+            for orig, renamed in dim_renames.items():
+                if renamed == dim:
+                    original_dim = orig
+                    break
+            
+            attr_name = original_dim if original_dim else (dim.lower() if dim.lower() in ['x', 'y', 'z'] else dim)
+            
+            try:
+                val = np.array(getattr(las, attr_name))
+            except AttributeError:
+                # If attribute doesn't exist, try with different case or skip
+                try:
+                    val = np.array(getattr(las, dim))
+                except AttributeError:
+                    print(f"  ⚠️  Warning: Could not access dimension '{dim}', skipping...")
+                    continue
             
             if target_name == 'x':
                 data[target_name] = (val - min_x).astype('f4')

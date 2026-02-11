@@ -65,9 +65,46 @@ def pandas_to_las(
         "Reflectance": "float64",
         "Deviation": "int32",
         "PredSemantic": "uint8",
+        "PredSemantic_original": "uint8",
         "PredInstance": "uint16",
+        "PredInstance_original": "uint16",
         "PredInstanceSAT": "uint16",
+        "PredInstanceSAT_old": "uint16",
     }
+    
+    # Dynamically add data types for any _original, _current, or _new columns found in the DataFrame
+    for col in df.columns:
+        if (col.endswith("_original") or col.endswith("_current") or col.endswith("_new")) and col not in extended_columns_with_data_types:
+            # Determine data type based on the base column name
+            base_name = col.replace("_original", "").replace("_current", "").replace("_new", "")
+            
+            if base_name in ["PredSemantic", "gt_semantic_segmentation"]:
+                extended_columns_with_data_types[col] = "uint8"
+            elif base_name in ["PredInstance", "PredInstanceSAT"]:
+                extended_columns_with_data_types[col] = "uint16"
+            elif base_name in ["red", "green", "blue"]:
+                extended_columns_with_data_types[col] = "uint16"
+            elif base_name in standard_columns_with_data_types:
+                # Use the same type as the base column
+                extended_columns_with_data_types[col] = standard_columns_with_data_types[base_name]
+            else:
+                # Default to float64 for unknown columns
+                extended_columns_with_data_types[col] = "float64"
+    
+    # Also handle numbered suffixes (e.g., red_1, green_1, etc.)
+    for col in df.columns:
+        if col not in standard_columns_with_data_types and col not in extended_columns_with_data_types:
+            # Check if it's a numbered variant (e.g., red_1, green_1)
+            if '_' in col and col.split('_')[-1].isdigit():
+                base_name = '_'.join(col.split('_')[:-1])
+                if base_name in standard_columns_with_data_types:
+                    extended_columns_with_data_types[col] = standard_columns_with_data_types[base_name]
+                elif base_name in ["PredSemantic", "gt_semantic_segmentation"]:
+                    extended_columns_with_data_types[col] = "uint8"
+                elif base_name in ["PredInstance", "PredInstanceSAT"]:
+                    extended_columns_with_data_types[col] = "uint16"
+                else:
+                    extended_columns_with_data_types[col] = "float64"
 
     # Standardize column names to match LAS format
     df.rename(columns={"x": "X", "y": "Y", "z": "Z"}, inplace=True)
@@ -109,13 +146,38 @@ def pandas_to_las(
     # for those which do not exist, take the data type from data frame
     for column in extra_columns:
         if column not in extended_columns_with_data_types.keys():
-            extended_columns_with_data_types[column] = df[column].dtype
+            # Handle special cases for prediction columns
+            if column.startswith("PredInstance"):
+                extended_columns_with_data_types[column] = "uint16"
+            elif column.startswith("PredSemantic"):
+                extended_columns_with_data_types[column] = "uint8"
+            else:
+                extended_columns_with_data_types[column] = df[column].dtype
 
     # add extra columns to the las file with the correct data types
+    # LAS format has a 32-character limit for dimension names, so we need to shorten long names
+    column_name_mapping = {}
+    
     for column in extra_columns:
+        las_column_name = column
+        
+        # Shorten names that are too long (>32 characters)
+        if len(column) > 32:
+            if column == "gt_semantic_segmentation_original":
+                las_column_name = "gt_semantic_seg_original"  # 23 chars
+            elif column.startswith("gt_semantic_segmentation_original_"):
+                # Handle numbered variants like gt_semantic_segmentation_original_1
+                suffix = column.replace("gt_semantic_segmentation_original_", "")
+                las_column_name = f"gt_semantic_seg_orig_{suffix}"  # Much shorter
+            else:
+                # Generic shortening for other long names
+                las_column_name = column[:32]
+        
+        column_name_mapping[column] = las_column_name
+        
         las_header.add_extra_dim(
             laspy.ExtraBytesParams(
-                name=column, type=extended_columns_with_data_types[column]
+                name=las_column_name, type=extended_columns_with_data_types[column]
             )
         )
 
@@ -133,7 +195,8 @@ def pandas_to_las(
 
     # add extra columns to the las file with the correct data types
     for column in extra_columns:
-        las_file[column] = df[column].astype(extended_columns_with_data_types[column])
+        las_column_name = column_name_mapping.get(column, column)
+        las_file[las_column_name] = df[column].astype(extended_columns_with_data_types[column])
 
     # Write the file to disk
     if do_compress:
