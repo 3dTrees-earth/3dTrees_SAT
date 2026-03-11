@@ -254,6 +254,13 @@ class MergePtSsIsOptimized(object):
             # an issue when saving the data to a .las file, as we want to cast the column to
             # an unsigned integer type, which does not support NaNs.
             merged_df["PredInstance"] = merged_df["PredInstance"].fillna(0)
+        else:
+            # No instances predicted: ensure PredInstance dimension exists (all 0) so downstream
+            # tools (tile_merge, visualization, etc.) do not fail on missing dimension (e.g. 3DT-717).
+            n_pts = len(merged_df)
+            merged_df["PredInstance"] = np.zeros(n_pts, dtype=np.uint16)
+            if self.verbose:
+                print("  No instance column from model; added PredInstance=0 for all points.")
 
         if self.verbose:
             print(f"  Post-processed in {time.time() - post_start:.2f}s")

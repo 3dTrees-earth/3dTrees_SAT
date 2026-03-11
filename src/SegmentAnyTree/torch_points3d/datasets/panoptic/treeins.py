@@ -96,7 +96,9 @@ def to_ins_ply(pos, label, file):
     assert len(label.shape) == 1
     assert pos.shape[0] == label.shape[0]
     pos = np.asarray(pos)
-    max_instance = np.max(np.asarray(label)).astype(np.int32) + 1
+    label_arr = np.asarray(label)
+    # When no instances are predicted, label can be empty; np.max(empty) has no identity (ValueError).
+    max_instance = (int(np.max(label_arr)) + 1) if label_arr.size > 0 else 0
     # rd_colors = np.random.randint(255, size=(max_instance, 3), dtype=np.uint8)
     # colors = rd_colors[np.asarray(label).astype(int)]
     # ply_array = np.ones(

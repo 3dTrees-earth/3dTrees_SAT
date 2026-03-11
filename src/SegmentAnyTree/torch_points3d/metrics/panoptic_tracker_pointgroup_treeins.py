@@ -840,101 +840,110 @@ class PanopticTracker(SegmentationTracker):
                         # @Treeins: save subsampled instance segmentation prediction of current data file
                     )
 
-                    # assign_index = knn(test_area_i.pos[has_prediction], test_area_i.pos, k=1)
-
-                    print("Doing knn")
-                    print("data is on device: {}".format(test_area_i.pos.device))
-
-                    assign_index = knn(
-                        test_area_i.pos[has_prediction].cpu(),
-                        test_area_i.pos.cpu(),
-                        k=1,
-                        num_workers=48,
-                    )
-
-                    print("Done knn")
-
-                    # assign_index2  = nearest(self._test_area.pos, self._test_area.pos[has_prediction])
-
-                    y_idx, x_idx = assign_index
-
-                    full_ins_pred = test_area_i.ins_pre[has_prediction][x_idx]
-
-                    full_ins_pred = torch.reshape(full_ins_pred, (-1,))
-                    # instance prediction and GT label full cloud (for final evaluation)
-
-                    # idx_in_cur = [idx for idx, l in enumerate(torch.argmax(full_pred, 1).numpy()) if l in self._dataset.stuff_classes]
-                    # idx_in_cur = np.array(idx_in_cur)
-                    # idx_in_cur.astype(int)
-
-                    # assign no instance label for points belonging to stuff classes
-                    pre_sem_labels_full = torch.argmax(full_pred, 1)
-                    for idx, l in enumerate(self._dataset.stuff_classes):
-                        idx_in_cur = (
-                            (pre_sem_labels_full == l)
-                            .nonzero(as_tuple=True)[0]
-                            .numpy()
-                            .astype(int)
+                    # When no instances predicted, skip knn (crashes with empty query) and write empty result_{i}.ply
+                    if not has_prediction.any():
+                        self._dataset.to_ins_ply(
+                            torch.empty(0, 3, dtype=test_area_i.pos.dtype),
+                            np.array([], dtype=np.int64),
+                            "result_{}.ply".format(i),
                         )
+                        print("No instance predictions; wrote empty result_{}.ply".format(i))
+                    else:
+                        # assign_index = knn(test_area_i.pos[has_prediction], test_area_i.pos, k=1)
+
+                        print("Doing knn")
+                        print("data is on device: {}".format(test_area_i.pos.device))
+
+                        assign_index = knn(
+                            test_area_i.pos[has_prediction].cpu(),
+                            test_area_i.pos.cpu(),
+                            k=1,
+                            num_workers=48,
+                        )
+
+                        print("Done knn")
+
+                        # assign_index2  = nearest(self._test_area.pos, self._test_area.pos[has_prediction])
+
+                        y_idx, x_idx = assign_index
+
+                        full_ins_pred = test_area_i.ins_pre[has_prediction][x_idx]
+
+                        full_ins_pred = torch.reshape(full_ins_pred, (-1,))
+                        # instance prediction and GT label full cloud (for final evaluation)
+
+                        # idx_in_cur = [idx for idx, l in enumerate(torch.argmax(full_pred, 1).numpy()) if l in self._dataset.stuff_classes]
+                        # idx_in_cur = np.array(idx_in_cur)
+                        # idx_in_cur.astype(int)
+
+                        # assign no instance label for points belonging to stuff classes
+                        pre_sem_labels_full = torch.argmax(full_pred, 1)
+                        for idx, l in enumerate(self._dataset.stuff_classes):
+                            idx_in_cur = (
+                                (pre_sem_labels_full == l)
+                                .nonzero(as_tuple=True)[0]
+                                .numpy()
+                                .astype(int)
+                            )
+                            full_ins_pred[idx_in_cur] = -1
+
+                        # If the distance between the point to be assigned label and its nearest point (the point which already has point) is larger than a threshold (e.g., 1m), assign -1 to this point as well.
+                        mat_pos = torch.sub(
+                            test_area_i.pos[has_prediction][x_idx], test_area_i.pos[y_idx]
+                        )
+                        mat_pos = mat_pos.pow(2)
+                        mat_pos = torch.sum(mat_pos, 1)
+                        mat_pos = mat_pos.sqrt()
+                        idx_in_cur = mat_pos > 1
                         full_ins_pred[idx_in_cur] = -1
+                        # for i,k in enumerate(x_idx):
+                        #    if (self._test_area.pos[has_prediction][k]-self._test_area.pos[i]).pow(2).sum().sqrt()>1:
+                        #        full_ins_pred[i]=-1
 
-                    # If the distance between the point to be assigned label and its nearest point (the point which already has point) is larger than a threshold (e.g., 1m), assign -1 to this point as well.
-                    mat_pos = torch.sub(
-                        test_area_i.pos[has_prediction][x_idx], test_area_i.pos[y_idx]
-                    )
-                    mat_pos = mat_pos.pow(2)
-                    mat_pos = torch.sum(mat_pos, 1)
-                    mat_pos = mat_pos.sqrt()
-                    idx_in_cur = mat_pos > 1
-                    full_ins_pred[idx_in_cur] = -1
-                    # for i,k in enumerate(x_idx):
-                    #    if (self._test_area.pos[has_prediction][k]-self._test_area.pos[i]).pow(2).sum().sqrt()>1:
-                    #        full_ins_pred[i]=-1
+                        # remove instance that contains point number less than 10
+                        unique_predicted_inslabels = torch.unique(full_ins_pred)
+                        for l in unique_predicted_inslabels:
+                            if l == -1:
+                                continue
+                            label_mask_l = full_ins_pred == l
+                            size_l = full_ins_pred[label_mask_l].shape[0]
+                            if size_l < 10:
+                                full_ins_pred[label_mask_l] = -1
 
-                    # remove instance that contains point number less than 10
-                    unique_predicted_inslabels = torch.unique(full_ins_pred)
-                    for l in unique_predicted_inslabels:
-                        if l == -1:
-                            continue
-                        label_mask_l = full_ins_pred == l
-                        size_l = full_ins_pred[label_mask_l].shape[0]
-                        if size_l < 10:
-                            full_ins_pred[label_mask_l] = -1
+                        """self._dataset.to_eval_ply(
+                            self._test_area.pos,
+                            full_ins_pred_embed.numpy(),  #[-1, ...]
+                            self._test_area.instance_labels,  #[0, ..]
+                            "Instance_Embed_results_forEval.ply",
+                        )
+                        self._dataset.to_eval_ply(
+                            self._test_area.pos,
+                            full_ins_pred_offset.numpy(),
+                            self._test_area.instance_labels,
+                            "Instance_Offset_results_forEval.ply",
+                        )"""
 
-                    """self._dataset.to_eval_ply(
-                        self._test_area.pos,
-                        full_ins_pred_embed.numpy(),  #[-1, ...]
-                        self._test_area.instance_labels,  #[0, ..]
-                        "Instance_Embed_results_forEval.ply",
-                    )
-                    self._dataset.to_eval_ply(
-                        self._test_area.pos,
-                        full_ins_pred_offset.numpy(),
-                        self._test_area.instance_labels,
-                        "Instance_Offset_results_forEval.ply",
-                    )"""
+                        print("writing evaluation txt")
+                        # self._dataset.final_eval(
+                        #     torch.argmax(full_pred, 1).numpy(),
+                        #     full_ins_pred.numpy(),
+                        #     full_ins_pred.numpy(),
+                        #     test_area_i.y,
+                        #     test_area_i.instance_labels,
+                        #     "Evaluation_{}.txt".format(i),  # @Treeins: save evaulation metrics of current data file
+                        # )
+                        # instance prediction with color for "things"
+                        print("writing instance ply")
 
-                    print("writing evaluation txt")
-                    # self._dataset.final_eval(
-                    #     torch.argmax(full_pred, 1).numpy(),
-                    #     full_ins_pred.numpy(),
-                    #     full_ins_pred.numpy(),
-                    #     test_area_i.y,
-                    #     test_area_i.instance_labels,
-                    #     "Evaluation_{}.txt".format(i),  # @Treeins: save evaulation metrics of current data file
-                    # )
-                    # instance prediction with color for "things"
-                    print("writing instance ply")
+                        things_idx = full_ins_pred != -1
+                        self._dataset.to_ins_ply(
+                            test_area_i.pos[things_idx],
+                            full_ins_pred[things_idx].numpy(),
+                            "result_{}.ply".format(i),
+                            # @Treeins: save instance segmentation prediction of current data file
+                        )
 
-                    things_idx = full_ins_pred != -1
-                    self._dataset.to_ins_ply(
-                        test_area_i.pos[things_idx],
-                        full_ins_pred[things_idx].numpy(),
-                        "result_{}.ply".format(i),
-                        # @Treeins: save instance segmentation prediction of current data file
-                    )
-
-                    print("writing instance ply done")
+                        print("writing instance ply done")
 
                     # print( " labels: maciek:  ", self._test_area[0].instance_labels) # TODO: continue here
                     # # instance prediction with color for "things"
