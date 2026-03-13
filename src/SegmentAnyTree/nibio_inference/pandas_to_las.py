@@ -59,19 +59,28 @@ def pandas_to_las(
         "blue": "uint16",  # Data type not specified in the provided formats
     }
 
+    # Drop training-only ground-truth columns that should not be written
+    # back to the LAS file. The SAT tool should only add PredSemantic
+    # and PredInstance on top of the original input dimensions.
+    gt_prefix = "gt_semantic_segmentation"
+    gt_cols_to_drop = [
+        col for col in df.columns
+        if col == gt_prefix or col.startswith(gt_prefix + "_")
+    ]
+    if gt_cols_to_drop:
+        df = df.drop(columns=gt_cols_to_drop)
+
     extended_columns_with_data_types = {
         "Amplitude": "float64",
         "Pulse_width": "float64",
         "Reflectance": "float64",
         "Deviation": "int32",
+        # Prediction outputs we always want to have in the LAS file
+        # in addition to any input dimensions.
         "PredSemantic": "uint8",
-        "PredSemantic_original": "uint8",
         "PredInstance": "uint16",
-        "PredInstance_original": "uint16",
-        "PredInstanceSAT": "uint16",
-        "PredInstanceSAT_old": "uint16",
     }
-    
+
     # Dynamically add data types for any _original, _current, or _new columns found in the DataFrame
     for col in df.columns:
         if (col.endswith("_original") or col.endswith("_current") or col.endswith("_new")) and col not in extended_columns_with_data_types:
